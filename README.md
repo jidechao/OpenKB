@@ -107,7 +107,29 @@ wiki/
 
 Short docs are read in full by the LLM. Long PDFs are indexed by PageIndex into a hierarchical tree with summaries — the LLM reads the tree instead of the full text, avoiding context window limits while retaining structural understanding.
 
-> **⚡ PageIndex Cloud API** — By default, PageIndex runs locally. Set `PAGEINDEX_API_KEY` in your `.env` to use [PageIndex Cloud](https://pageindex.ai/) for faster indexing. Get an API key at [pageindex.dev](https://pageindex.dev).
+
+# PageIndex integration
+For long documents, relying solely on summaries often leads to information loss.
+We integrate [PageIndex](https://github.com/VectifyAI/PageIndex) into the knowledge base to provide structured, context-aware retrieval for long documents—avoiding the information loss common in summary-based approaches.
+
+By default, PageIndex runs locally using the open-source version, with no external dependencies required.
+
+### Optional: Cloud Support
+
+For large or complex PDFs, [PageIndex Cloud](https://docs.pageindex.ai/) can be used to access additional capabilities, including:
+
+- OCR support for scanned PDFs (via hosted VLM models)
+- Faster structure generation
+- Scalable indexing for large documents
+
+
+Set `PAGEINDEX_API_KEY` in your `.env` to enable cloud features:
+
+```
+PAGEINDEX_API_KEY=your_api_key
+```
+
+---
 
 ### The wiki compiles knowledge
 
