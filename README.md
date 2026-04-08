@@ -4,7 +4,7 @@
   <img src="https://docs.pageindex.ai/images/openkb.png" alt="OpenKB (by PageIndex)" />
 </a>
 
-# OpenKB: Open LLM Knowledge Base
+# OpenKB — Open LLM Knowledge Base
 
 <p align="center"><i>Scale to long documents&nbsp; • &nbsp;Reasoning-based retrieval&nbsp; • &nbsp;Native multi-modality&nbsp; • &nbsp;No Vector DB</i></p>
 
@@ -12,11 +12,11 @@
 
 ---
 
-# 📑 Introduction to OpenKB
+# 📑 What is OpenKB
 
-Andrej Karpathy [described](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) a workflow where LLMs compile raw documents into a structured, interlinked markdown wiki; summaries, concept pages, cross-references, all maintained automatically. Knowledge compounds over time instead of being re-derived on every query.
+**OpenKB (Open Knowledge Base)** is an open-source system (in CLI) that compiles raw documents into a structured, interlinked wiki-style knowledge base using LLMs, powered by [**PageIndex**](https://github.com/VectifyAI/PageIndex) for vectorless long document retrieval.
 
-**OpenKB (Open Knowledge Base)** is an open-source CLI that implements this workflow, powered by [**PageIndex**](https://github.com/VectifyAI/PageIndex) for vectorless long document retrieval.
+The idea is based on a [concept](https://x.com/karpathy/status/2039805659525644595) described by Andrej Karpathy: LLMs generate summaries, concept pages, and cross-references, all maintained automatically. Knowledge compounds over time instead of being re-derived on every query.
 
 ### Why not just traditional RAG?
 
@@ -25,7 +25,7 @@ Traditional RAG rediscovers knowledge from scratch on every query. Nothing accum
 ### Features
 
 - **Any format** — PDF, Word, PowerPoint, Excel, HTML, Markdown, text, CSV, and more via markitdown
-- **Scale to long documents** — Long and complex documents are handled via [PageIndex](https://github.com/VectifyAI/PageIndex) tree indexing, enabling better long-context retrieval
+- **Scale to long documents** — Long and complex documents are handled via [PageIndex](https://github.com/VectifyAI/PageIndex) tree indexing, enabling accurate, vectorless long-context retrieval
 - **Native multi-modality** — Retrieves and understands figures, tables, and images, not just text
 - **Auto wiki** — LLM generates summaries, concept pages, and cross-links. You curate sources; the LLM does the rest
 - **Query** — Ask questions against your wiki. The LLM navigates your compiled knowledge to answer
@@ -44,35 +44,39 @@ pip install openkb
 ### Quick start
 
 ```bash
-# 1. Create a knowledge base
+# 1. Create a directory for your knowledge base
 mkdir my-kb && cd my-kb
 
-# 2. Initialize
-okb init
+# 2. Initialize the knowledge base
+openkb init
 
 # 3. Add documents
-okb add paper.pdf
-okb add ~/papers/                   # Add a whole directory
-okb add article.html
+openkb add paper.pdf
+openkb add ~/papers/                   # Add a whole directory
+openkb add article.html
 
 # 4. Ask questions
-okb query "What are the main findings?"
+openkb query "What are the main findings?"
 
 # 5. Check wiki health
-okb lint
+openkb lint
 ```
 
 ### Set up your LLM
 
-OpenKB comes with [multi-LLM support](https://docs.litellm.ai/docs/providers) (e.g., OpenAI, Claude, Gemini) via [LiteLLM](https://github.com/BerriAI/litellm) (pinned to a [safe version](https://docs.litellm.ai/blog/security-update-march-2026)). 
+OpenKB comes with [multi-LLM support](https://docs.litellm.ai/docs/providers) (e.g., OpenAI, Claude, Gemini) via [LiteLLM](https://github.com/BerriAI/litellm) (pinned to a [safe version](https://docs.litellm.ai/blog/security-update-march-2026)).
 
-Create a `.env` file with your LLM API key. Choose your LLM during `okb init` or edit [`.okb/config.yaml`](#configuration).
+Set your model during `openkb init`, or in [`.openkb/config.yaml`](#configuration), using `provider/model` LiteLLM format (like `anthropic/claude-sonnet-4-6`). OpenAI models can omit the prefix (like `gpt-5.4`).
+
+Create a `.env` file with your LLM API key:
 
 ```bash
 LLM_API_KEY=your_llm_api_key
 ```
 
 # 🧩 How It Works
+
+### Architecture
 
 ```
 raw/                              You drop files here
@@ -82,8 +86,7 @@ raw/                              You drop files here
  ├─ Long PDFs ──→ PageIndex ────→ LLM reads document trees
  │                                     │
  │                                     ▼
- │                              Wiki Compilation
- │                           (single LLM session)
+ │                         Wiki Compilation (using LLM)
  │                                     │
  ▼                                     ▼
 wiki/
@@ -97,16 +100,16 @@ wiki/
  └── reports/            Lint reports
 ```
 
-### Two paths, one wiki
+### Short vs. long document handling
 
 | | Short documents | Long documents (PDF ≥ 20 pages) |
 |---|---|---|
 | **Convert** | markitdown → Markdown | PageIndex → tree index + summaries |
 | **Images** | Extracted inline (pymupdf) | Extracted by PageIndex |
-| **LLM reads** | Full text | Tree summaries only |
+| **LLM reads** | Full text | Document trees |
 | **Result** | summary + concepts | summary + concepts |
 
-Short docs are read in full by the LLM. Long PDFs are indexed by PageIndex into a hierarchical tree with summaries. The LLM reads the tree instead of the full text, avoiding context window limits while retaining structural understanding.
+Short docs are read in full by the LLM. Long PDFs are indexed by PageIndex into a hierarchical tree with summaries. The LLM reads the tree instead of the full text, enabling better retrieval from long documents.
 
 ### The wiki compiles knowledge
 
@@ -125,34 +128,41 @@ A single source might touch 10-15 wiki pages. Knowledge accumulates: each docume
 
 | Command | Description |
 |---|---|
-| `okb init` | Initialize a new knowledge base (interactive) |
-| `okb add <file_or_dir>` | Add documents and compile to wiki |
-| `okb query "question"` | Ask a question against the knowledge base |
-| `okb query "question" --save` | Ask and save the answer to `wiki/explorations/` |
-| `okb watch` | Watch `raw/` and auto-compile new files |
-| `okb lint` | Run structural + knowledge health checks |
-<!-- | `okb lint --fix` | Auto-fix what it can | -->
-| `okb list` | List indexed documents and concepts |
-| `okb status` | Show knowledge base stats |
+| `openkb init` | Initialize a new knowledge base (interactive) |
+| `openkb add <file_or_dir>` | Add documents and compile to wiki |
+| `openkb query "question"` | Ask a question against the knowledge base |
+| `openkb query "question" --save` | Ask and save the answer to `wiki/explorations/` |
+| `openkb watch` | Watch `raw/` and auto-compile new files |
+| `openkb lint` | Run structural + knowledge health checks |
+| `openkb list` | List indexed documents and concepts |
+| `openkb status` | Show knowledge base stats |
+
+<!-- | `openkb lint --fix` | Auto-fix what it can | -->
 
 ### Configuration
 
-Generated by `okb init`, stored in `.okb/config.yaml`:
+Settings are initialized by `openkb init`, and stored in `.openkb/config.yaml`:
 
 ```yaml
 model: gpt-5.4                   # LLM model (any LiteLLM-supported provider)
-api_key_env: LLM_API_KEY         # Environment variable for LLM API key
 language: en                     # Wiki output language
 pageindex_threshold: 20          # PDF pages threshold for PageIndex
-pageindex_api_key_env: ""        # (Optional) Environment variable for PageIndex Cloud API key 
 ```
+
+Model names use `provider/model` LiteLLM [format](https://docs.litellm.ai/docs/providers) (OpenAI models can omit the prefix):
+
+| Provider | Model example |
+|---|---|
+| OpenAI | `gpt-5.4` |
+| Anthropic | `anthropic/claude-sonnet-4-6` |
+| Gemini | `gemini/gemini-3.1-pro-preview` |
 
 ### PageIndex integration
 
-For long documents, relying solely on summaries often leads to information loss.
-We integrate [PageIndex](https://github.com/VectifyAI/PageIndex) into the knowledge base to provide structured, context-aware retrieval for long documents, avoiding the information loss common in summary-based approaches.
+Long documents are challenging for LLMs due to context limits, context rot, and summarization loss.
+[PageIndex](https://github.com/VectifyAI/PageIndex) solves this with vectorless, reasoning-based retrieval — building a hierarchical tree index that lets LLMs reason over the index for context-aware retrieval.
 
-By default, PageIndex runs locally using the open-source version, with no external dependencies required.
+PageIndex runs locally by default using the [open-source version](https://github.com/VectifyAI/PageIndex), with no external dependencies required.
 
 #### Optional: Cloud Support
 
@@ -183,26 +193,34 @@ OpenKB's wiki is a directory of Markdown files with `[[wikilinks]]`. Obsidian re
 3. Use graph view to see knowledge connections
 4. Use Obsidian Web Clipper to add web articles to `raw/`
 
-# 🔗 Learn More
+# 🧭 Learn More
 
 ### Compared to Karpathy's Approach
 
 | | Karpathy's workflow | OpenKB |
 |---|---|---|
 | Short documents | LLM reads directly | markitdown → LLM reads |
-| Long documents | Doesn't fit in context | PageIndex tree index |
+| Long documents | Context limits, context rot | PageIndex tree index |
 | Supported formats | Web clipper → .md | PDF, Word, PPT, Excel, HTML, text, CSV, .md |
 | Wiki compilation | LLM agent | LLM agent (same) |
 | Q&A | Query over wiki | Wiki + PageIndex retrieval |
 
 ### Tech Stack
 
-- [PageIndex](https://github.com/VectifyAI/PageIndex) — Vectorless, reasoning-based document indexing
+- [PageIndex](https://github.com/VectifyAI/PageIndex) — Vectorless, reasoning-based document indexing and retrieval
 - [markitdown](https://github.com/microsoft/markitdown) — Universal file-to-markdown conversion
 - [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) — Agent framework (supports non-OpenAI models via LiteLLM)
 - [LiteLLM](https://github.com/BerriAI/litellm) — Multi-provider LLM gateway
 - [Click](https://click.palletsprojects.com/) — CLI framework
 - [watchdog](https://github.com/gorakhargosh/watchdog) — Filesystem monitoring
+
+### Roadmap
+
+- [ ] Extend long document handling to non-PDF formats
+- [ ] Scale to large document collections with nested folder support
+- [ ] Hierarchical concept (topic) indexing for massive knowledge bases
+- [ ] Database-backed storage engine
+- [ ] Web UI for browsing and managing wikis
 
 ### Contributing
 
@@ -214,7 +232,7 @@ Apache 2.0. See [LICENSE](LICENSE).
 
 ### Support Us
 
-Leave us a star 🌟 if you like our project. Thank you!  
+If you find OpenKB useful, give us a star 🌟 — and check out [PageIndex](https://github.com/VectifyAI/PageIndex) too!  
 
 <div>
 

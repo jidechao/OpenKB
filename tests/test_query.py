@@ -38,7 +38,7 @@ class TestBuildQueryAgent:
 
     def test_agent_model(self, tmp_path):
         agent = build_query_agent(str(tmp_path), str(tmp_path / "pi"), "my-model")
-        assert agent.model == "my-model"
+        assert agent.model == "litellm/my-model"
 
 
 class TestPageindexRetrieve:
@@ -123,7 +123,7 @@ class TestRunQuery:
     @pytest.mark.asyncio
     async def test_run_query_returns_final_output(self, tmp_path):
         (tmp_path / "wiki").mkdir()
-        (tmp_path / ".okb").mkdir()
+        (tmp_path / ".openkb").mkdir()
 
         mock_result = MagicMock()
         mock_result.final_output = "The answer is 42."
@@ -137,7 +137,7 @@ class TestRunQuery:
     @pytest.mark.asyncio
     async def test_run_query_passes_question_to_agent(self, tmp_path):
         (tmp_path / "wiki").mkdir()
-        (tmp_path / ".okb").mkdir()
+        (tmp_path / ".openkb").mkdir()
 
         captured = {}
 
