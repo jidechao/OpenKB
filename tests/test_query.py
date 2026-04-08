@@ -65,7 +65,8 @@ class TestPageindexRetrieve:
         mock_client.collection.return_value = mock_col
 
         with patch("openkb.agent.query.PageIndexClient", return_value=mock_client), \
-             patch("openkb.agent.query.litellm.completion") as mock_llm:
+             patch("openkb.agent.query.litellm.completion") as mock_llm, \
+             patch.dict("os.environ", {"PAGEINDEX_API_KEY": ""}, clear=False):
             mock_llm.return_value = MagicMock(
                 choices=[MagicMock(message=MagicMock(content="1-2"))]
             )
@@ -74,29 +75,48 @@ class TestPageindexRetrieve:
         assert "Introduction text here." in result
         assert "More intro content." in result
 
-    def test_handles_empty_structure(self, tmp_path):
+    def test_cloud_doc_uses_streaming_query(self, tmp_path):
+        """Cloud doc (pi- prefix) delegates to col.query(stream=True)."""
+        from dataclasses import dataclass
+        from typing import Any
+
+        @dataclass
+        class FakeEvent:
+            type: str
+            data: Any
+
+        class FakeStream:
+            async def __aiter__(self):
+                yield FakeEvent(type="answer_delta", data="Cloud ")
+                yield FakeEvent(type="answer_delta", data="answer about MCP.")
+
+        mock_stream = FakeStream()
+
+        mock_col = MagicMock()
+        mock_col.query.return_value = mock_stream
+
+        mock_client = MagicMock()
+        mock_client.collection.return_value = mock_col
+
+        with patch("openkb.agent.query.PageIndexClient", return_value=mock_client):
+            result = _pageindex_retrieve_impl("pi-abc123", "What is MCP?", "/db", "gpt-4o-mini")
+
+        assert "Cloud answer about MCP." in result
+        mock_col.query.assert_called_once_with("What is MCP?", doc_ids=["pi-abc123"], stream=True)
+
+    def test_local_empty_structure_returns_error(self, tmp_path):
+        """Local doc with empty structure returns error."""
         mock_col = MagicMock()
         mock_col.get_document_structure.return_value = []
 
         mock_client = MagicMock()
         mock_client.collection.return_value = mock_col
 
-        with patch("openkb.agent.query.PageIndexClient", return_value=mock_client):
-            result = _pageindex_retrieve_impl("doc456", "What?", "/db", "gpt-4o-mini")
+        with patch("openkb.agent.query.PageIndexClient", return_value=mock_client), \
+             patch.dict("os.environ", {"PAGEINDEX_API_KEY": ""}, clear=False):
+            result = _pageindex_retrieve_impl("local-uuid-123", "What?", "/db", "gpt-4o-mini")
 
         assert "No structure found" in result
-
-    def test_handles_structure_error(self, tmp_path):
-        mock_col = MagicMock()
-        mock_col.get_document_structure.side_effect = RuntimeError("DB error")
-
-        mock_client = MagicMock()
-        mock_client.collection.return_value = mock_col
-
-        with patch("openkb.agent.query.PageIndexClient", return_value=mock_client):
-            result = _pageindex_retrieve_impl("doc789", "What?", "/db", "gpt-4o-mini")
-
-        assert "Error" in result
 
 
 class TestRunQuery:

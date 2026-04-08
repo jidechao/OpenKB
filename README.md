@@ -97,11 +97,13 @@ wiki/
 | | Short documents | Long documents (PDF ≥ 50 pages) |
 |---|---|---|
 | **Convert** | markitdown → Markdown | PageIndex → tree index + summaries |
-| **Images** | Extracted from base64 | Pending PageIndex support |
+| **Images** | Extracted inline (pymupdf) | Extracted by PageIndex |
 | **LLM reads** | Full text | Tree summaries only |
 | **Result** | summary + concepts | summary + concepts |
 
 Short docs are read in full by the LLM. Long PDFs are indexed by PageIndex into a hierarchical tree with summaries — the LLM reads the tree instead of the full text, avoiding context window limits while retaining structural understanding.
+
+> **⚡ PageIndex Cloud API** — By default, PageIndex runs locally. Set `PAGEINDEX_API_KEY` in your `.env` to use [PageIndex Cloud](https://pageindex.ai/) for faster indexing. Get an API key at [pageindex.dev](https://pageindex.dev).
 
 ### The wiki compiles knowledge
 
@@ -137,6 +139,7 @@ model: gpt-5.4                   # LLM model (any LiteLLM-supported provider)
 api_key_env: OPENAI_API_KEY      # Environment variable for API key
 language: en                      # Wiki output language
 pageindex_threshold: 50           # PDF pages threshold for PageIndex
+pageindex_api_key_env: ""                # Env var name for PageIndex Cloud API key (default: auto-detect PAGEINDEX_API_KEY)
 ```
 
 ### AGENTS.md
@@ -176,8 +179,8 @@ OpenKB's wiki is a directory of Markdown files with `[[wikilinks]]` — Obsidian
 
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE)
 
 ## Acknowledgments
 
-Inspired by [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). Powered by [PageIndex](https://github.com/VectifyAI/PageIndex).
+Inspired by [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). Powered by [PageIndex](https://pageindex.ai/).
