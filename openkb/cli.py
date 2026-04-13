@@ -128,7 +128,7 @@ def _find_kb_dir(override: Path | None = None) -> Path | None:
     return None
 
 
-def _add_single_file(file_path: Path, kb_dir: Path) -> None:
+def add_single_file(file_path: Path, kb_dir: Path) -> None:
     """Convert, index, and compile a single document into the knowledge base.
 
     Steps:
@@ -346,7 +346,7 @@ def add(ctx, path):
         click.echo(f"Found {total} supported file(s) in {path}.")
         for i, f in enumerate(files, 1):
             click.echo(f"\n[{i}/{total}] ", nl=False)
-            _add_single_file(f, kb_dir)
+            add_single_file(f, kb_dir)
     else:
         if target.suffix.lower() not in SUPPORTED_EXTENSIONS:
             click.echo(
@@ -354,7 +354,7 @@ def add(ctx, path):
                 f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
             )
             return
-        _add_single_file(target, kb_dir)
+        add_single_file(target, kb_dir)
 
 
 @cli.command()
@@ -396,6 +396,107 @@ def query(ctx, question, save):
 
 
 @cli.command()
+@click.option(
+    "--resume", "-r", "resume",
+    is_flag=False, flag_value="__latest__", default=None, metavar="[ID]",
+    help="Resume the latest chat session, or a specific one by id or prefix.",
+)
+@click.option(
+    "--list", "list_sessions_flag",
+    is_flag=True, default=False,
+    help="List chat sessions.",
+)
+@click.option(
+    "--delete", "delete_id",
+    default=None, metavar="ID",
+    help="Delete a chat session by id or prefix.",
+)
+@click.option(
+    "--no-color", "no_color",
+    is_flag=True, default=False,
+    help="Disable colored output.",
+)
+@click.pass_context
+def chat(ctx, resume, list_sessions_flag, delete_id, no_color):
+    """Start an interactive chat with the knowledge base."""
+    kb_dir = _find_kb_dir(ctx.obj.get("kb_dir_override"))
+    if kb_dir is None:
+        click.echo("No knowledge base found. Run `openkb init` first.")
+        return
+
+    from openkb.agent.chat_session import (
+        ChatSession,
+        delete_session,
+        list_sessions,
+        load_session,
+        relative_time,
+        resolve_session_id,
+    )
+
+    if list_sessions_flag:
+        sessions = list_sessions(kb_dir)
+        if not sessions:
+            click.echo("No chat sessions yet.")
+            return
+        click.echo(f"  {'ID':<22} {'TURNS':<6} {'UPDATED':<12} TITLE")
+        click.echo(f"  {'-'*22} {'-'*6} {'-'*12} {'-'*30}")
+        for s in sessions:
+            rel = relative_time(s.get("updated_at", ""))
+            title = s.get("title") or "(empty)"
+            click.echo(
+                f"  {s['id']:<22} {s['turn_count']:<6} {rel:<12} {title}"
+            )
+        click.echo(
+            f"\n{len(sessions)} session(s) in {kb_dir / '.openkb' / 'chats'}"
+        )
+        return
+
+    if delete_id is not None:
+        try:
+            resolved = resolve_session_id(kb_dir, delete_id)
+        except ValueError as exc:
+            click.echo(f"[ERROR] {exc}")
+            return
+        if not resolved:
+            click.echo(f"No matching session: {delete_id}")
+            return
+        if delete_session(kb_dir, resolved):
+            click.echo(f"Deleted session {resolved}")
+        else:
+            click.echo(f"Could not delete session: {resolved}")
+        return
+
+    openkb_dir = kb_dir / ".openkb"
+    config = load_config(openkb_dir / "config.yaml")
+    _setup_llm_key(kb_dir)
+
+    if resume is not None:
+        try:
+            resolved = resolve_session_id(kb_dir, resume)
+        except ValueError as exc:
+            click.echo(f"[ERROR] {exc}")
+            return
+        if not resolved:
+            if resume == "__latest__":
+                click.echo("No previous chat sessions to resume.")
+            else:
+                click.echo(f"No matching session: {resume}")
+            return
+        session = load_session(kb_dir, resolved)
+    else:
+        model: str = config.get("model", DEFAULT_CONFIG["model"])
+        language: str = config.get("language", "en")
+        session = ChatSession.new(kb_dir, model, language)
+
+    from openkb.agent.chat import run_chat
+
+    try:
+        asyncio.run(run_chat(kb_dir, session, no_color=no_color))
+    except Exception as exc:
+        click.echo(f"[ERROR] Chat failed: {exc}")
+
+
+@cli.command()
 @click.pass_context
 def watch(ctx):
     """Watch the raw/ directory for new documents and process them automatically."""
@@ -418,41 +519,45 @@ def watch(ctx):
                     f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
                 )
                 continue
-            _add_single_file(fp, kb_dir)
+            add_single_file(fp, kb_dir)
 
     click.echo(f"Watching {raw_dir} for new documents. Press Ctrl+C to stop.")
     watch_directory(raw_dir, on_new_files)
 
 
-@cli.command()
-@click.option("--fix", is_flag=True, default=False, help="Automatically fix lint issues (not yet implemented).")
-@click.pass_context
-def lint(ctx, fix):
-    """Lint the knowledge base for structural and semantic inconsistencies."""
-    if fix:
-        click.echo("Warning: --fix is not yet implemented. Running lint in report-only mode.")
-    kb_dir = _find_kb_dir(ctx.obj.get("kb_dir_override"))
-    if kb_dir is None:
-        click.echo("No knowledge base found. Run `openkb init` first.")
-        return
+async def run_lint(kb_dir: Path) -> Path | None:
+    """Run structural + knowledge lint, write report, return report path.
 
+    Returns ``None`` if the KB has no indexed documents (nothing to lint).
+    Async because knowledge lint uses an LLM agent. Usable from CLI
+    (via ``asyncio.run``) and directly from the chat REPL.
+    """
     from openkb.lint import run_structural_lint
     from openkb.agent.linter import run_knowledge_lint
 
     openkb_dir = kb_dir / ".openkb"
+
+    # Skip lint entirely when the KB has no indexed documents
+    hashes_file = openkb_dir / "hashes.json"
+    if hashes_file.exists():
+        hashes = json.loads(hashes_file.read_text(encoding="utf-8"))
+    else:
+        hashes = {}
+    if not hashes:
+        click.echo("Nothing to lint — no documents indexed yet. Run `openkb add` first.")
+        return
+
     config = load_config(openkb_dir / "config.yaml")
     _setup_llm_key(kb_dir)
     model: str = config.get("model", DEFAULT_CONFIG["model"])
 
-    # Structural lint
     click.echo("Running structural lint...")
     structural_report = run_structural_lint(kb_dir)
     click.echo(structural_report)
 
-    # Knowledge lint (semantic)
     click.echo("Running knowledge lint...")
     try:
-        knowledge_report = asyncio.run(run_knowledge_lint(kb_dir, model))
+        knowledge_report = await run_knowledge_lint(kb_dir, model)
     except Exception as exc:
         knowledge_report = f"Knowledge lint failed: {exc}"
     click.echo(knowledge_report)
@@ -467,17 +572,25 @@ def lint(ctx, fix):
     report_path.write_text(report_content, encoding="utf-8")
     append_log(kb_dir / "wiki", "lint", f"report → {report_path.name}")
     click.echo(f"\nReport written to {report_path}")
+    return report_path
 
 
-@cli.command(name="list")
+@cli.command()
+@click.option("--fix", is_flag=True, default=False, help="Automatically fix lint issues (not yet implemented).")
 @click.pass_context
-def list_cmd(ctx):
-    """List all documents in the knowledge base."""
+def lint(ctx, fix):
+    """Lint the knowledge base for structural and semantic inconsistencies."""
+    if fix:
+        click.echo("Warning: --fix is not yet implemented. Running lint in report-only mode.")
     kb_dir = _find_kb_dir(ctx.obj.get("kb_dir_override"))
     if kb_dir is None:
         click.echo("No knowledge base found. Run `openkb init` first.")
         return
+    asyncio.run(run_lint(kb_dir))
 
+
+def print_list(kb_dir: Path) -> None:
+    """Print all documents in the knowledge base. Usable from CLI and chat REPL."""
     openkb_dir = kb_dir / ".openkb"
     hashes_file = openkb_dir / "hashes.json"
     if not hashes_file.exists():
@@ -530,15 +643,19 @@ def list_cmd(ctx):
                 click.echo(f"  - {r}")
 
 
-@cli.command()
+@cli.command(name="list")
 @click.pass_context
-def status(ctx):
-    """Show the current status of the knowledge base."""
+def list_cmd(ctx):
+    """List all documents in the knowledge base."""
     kb_dir = _find_kb_dir(ctx.obj.get("kb_dir_override"))
     if kb_dir is None:
         click.echo("No knowledge base found. Run `openkb init` first.")
         return
+    print_list(kb_dir)
 
+
+def print_status(kb_dir: Path) -> None:
+    """Print knowledge base status. Usable from CLI and chat REPL."""
     wiki_dir = kb_dir / "wiki"
     subdirs = ["sources", "summaries", "concepts", "reports"]
 
@@ -586,3 +703,14 @@ def status(ctx):
             import datetime
             mtime = datetime.datetime.fromtimestamp(newest_report.stat().st_mtime)
             click.echo(f"  Last lint:     {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+@cli.command()
+@click.pass_context
+def status(ctx):
+    """Show the current status of the knowledge base."""
+    kb_dir = _find_kb_dir(ctx.obj.get("kb_dir_override"))
+    if kb_dir is None:
+        click.echo("No knowledge base found. Run `openkb init` first.")
+        return
+    print_status(kb_dir)
